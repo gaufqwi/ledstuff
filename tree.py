@@ -47,7 +47,6 @@ class Tree:
         self.zrange = self.maxz - self.minz
         self.rrange = self.maxr - self.minr
 
-
     def find_close(self, **query):
         out = []
         for pos, led in self.leds.items():
@@ -132,6 +131,11 @@ class Tree:
             compressed.append(frame)
         return compressed
 
+    def generate(self, filename, state, shaders=[], background=0, agg_func=gamma_avg, loop=True):
+        frames = self.render(state, shaders, background, agg_func)
+        frames = self.compress(frames, loop)
+        with open(filename, "w") as outfile:
+            json.dump(frames, outfile)
 
 class State:
     def __init__(self, serial=0, modulus=1e9, limit=None):
@@ -154,15 +158,31 @@ class State:
 def make_layer_shader(tree, color, thickness, zoffset):
     def shader(state):
         rate = tree.zrange / state.modulus
-        z = tree.minz + (zoffset + rate * state.serial * thickness) % tree.zrange
+        z = tree.minz + (zoffset + rate * state.serial) % tree.zrange
         return tree.light_close(color, z=z, dz=thickness / 2, dim_func=make_logistic(10, 0.5))
+    return shader
+
+def make_xlayer_shader(tree, color, thickness, xoffset):
+    def shader(state):
+        rate = tree.xrange / state.modulus
+        x = tree.minx + (xoffset + rate * state.serial) % tree.xrange
+        return tree.light_close(color, x=x, dx=thickness / 2)
     return shader
 
 if __name__ == "__main__":
     tree = Tree()
     s = State(modulus=36)
-    shader = make_layer_shader(tree, 0x0000ff, 100, 0)
-    frames = tree.render(s, [shader])
+    shaders = [make_layer_shader(tree, 0x0000ff, 200, 0),
+               make_layer_shader(tree, 0x00ffff, 200, 200),
+               make_layer_shader(tree, 0x00ff00, 200, 400),
+               make_layer_shader(tree, 0xffff00, 200, 600),
+               make_layer_shader(tree, 0xff0000, 200, 800),
+               make_layer_shader(tree, 0xff00ff, 200, 1000),
+               make_layer_shader(tree, 0xffffff, 200, 1200)]
+    xshaders = [make_xlayer_shader(tree, 0x00ff00, 300, 0),
+                make_xlayer_shader(tree, 0xffffff, 300, 300),
+                make_xlayer_shader(tree, 0x0000ff, 300, 600)]
+    frames = tree.render(s, xshaders)
     compressed = tree.compress(frames)
-    with open("layers.json", "w") as layers:
+    with open("xlayers.json", "w") as layers:
         json.dump(compressed, layers, indent=2)
